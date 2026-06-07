@@ -6,6 +6,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import torchvision
 import torchvision.transforms as transforms
+from PIL import Image
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 CLASSES = ['avion','automobile','oiseau','chat','cerf','chien','grenouille','cheval','bateau','camion']
@@ -14,20 +15,14 @@ CLASSES = ['avion','automobile','oiseau','chat','cerf','chien','grenouille','che
 # 1. CHARGEMENT CIFAR-10
 # =========================
 
-# Augmentation sur le train pour réduire l'overfitting
-transform_train = transforms.Compose([
-    transforms.RandomHorizontalFlip(),
-    transforms.RandomCrop(32, padding=4),
-    transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465),(0.2470, 0.2435, 0.2616))
-])
-transform_test = transforms.Compose([
+# Même prétraitement pour train et test : conversion en tenseur + normalisation.
+transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.4914, 0.4822, 0.4465),(0.2470, 0.2435, 0.2616))
 ])
 
-train_set = torchvision.datasets.CIFAR10(root='./data', train=True,  download=True, transform=transform_train)
-test_set  = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
+train_set = torchvision.datasets.CIFAR10(root='./data', train=True,  download=True, transform=transform)
+test_set  = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
 
 loader_tr = DataLoader(train_set, batch_size=128, shuffle=True,  num_workers=0)
 loader_te = DataLoader(test_set,  batch_size=128, shuffle=False, num_workers=0)
@@ -52,14 +47,11 @@ def normaliser(img):
     mn, mx = img.min(), img.max()
     return (img - mn) / (mx - mn + 1e-8)
 
-# Récupère la première image de chat du dataset (classe 3)
-def get_chat(dataset):
-    for img, label in dataset:
-        if label == 3:
-            img = img * torch.tensor([0.2470,0.2435,0.2616]).view(3,1,1) \
-                      + torch.tensor([0.4914,0.4822,0.4465]).view(3,1,1)
-            img = np.clip(img.numpy(), 0, 1)
-            return 0.299*img[0] + 0.587*img[1] + 0.114*img[2]
+# Charge l'image du chat depuis le fichier (même répertoire que le script)
+# L'image est déjà en niveaux de gris, on la normalise dans [0,1]
+def get_chat_from_file(path="image-chat.png"):
+    img = Image.open(path).convert("L")   # conversion en niveaux de gris
+    return np.array(img, dtype=np.float32) / 255.0
 
 # =========================
 # 3. FILTRES K1..K6 SUR IMAGE DE CHAT
@@ -74,7 +66,7 @@ filtres = {
     'K6 - Sobel D':    np.array([[-2,-1,0],[-1,1,1],[0,1,2]]),
 }
 
-chat = get_chat(test_set)
+chat = get_chat_from_file("image-chat.png")
 
 fig, axes = plt.subplots(2, 4, figsize=(16, 8))
 fig.suptitle("Effet des filtres de convolution (image de chat)", fontsize=13)
@@ -98,22 +90,22 @@ plt.show()
 # 4. ARCHITECTURE CNN
 # =========================
 
-# CNN conforme au sujet :
+# CNN strictement conforme au sujet (section 2.5) :
 # (32,32,3) -> Conv64 -> Conv64 -> Pool -> Conv64 -> Pool -> Conv64 -> Flatten -> Dense(10)
+# Chaque convolution est suivie d'une activation ReLU.
 class CNN(nn.Module):
     def __init__(self):
         super().__init__()
         self.features = nn.Sequential(
-            nn.Conv2d(3, 64, 3, padding=1),  nn.BatchNorm2d(64), nn.ReLU(),
-            nn.Conv2d(64, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
+            nn.Conv2d(3, 64, 3, padding=1),  nn.ReLU(),
+            nn.Conv2d(64, 64, 3, padding=1), nn.ReLU(),
             nn.MaxPool2d(2),
-            nn.Conv2d(64, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
+            nn.Conv2d(64, 64, 3, padding=1), nn.ReLU(),
             nn.MaxPool2d(2),
-            nn.Conv2d(64, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
+            nn.Conv2d(64, 64, 3, padding=1), nn.ReLU(),
         )
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Dropout(0.5),
             nn.Linear(64*8*8, 10)
         )
     def forward(self, x):
@@ -123,10 +115,10 @@ class CNN(nn.Module):
 # 5. ENTRAÎNEMENT CNN
 # =========================
 
-# Entraîne le CNN avec Adam + scheduler cosinus
+# Entraînement par descente de gradient en mini-lots (SGD avec momentum),
+# rétropropagation gérée automatiquement par PyTorch (Autograd).
 cnn  = CNN().to(device)
-opt  = optim.Adam(cnn.parameters(), lr=1e-3, weight_decay=1e-4)
-sch  = optim.lr_scheduler.CosineAnnealingLR(opt, T_max=20)
+opt  = optim.SGD(cnn.parameters(), lr=0.01, momentum=0.9)
 crit = nn.CrossEntropyLoss()
 
 print(f"Parametres CNN : {sum(p.numel() for p in cnn.parameters()):,}")
@@ -141,7 +133,6 @@ for ep in range(1, 21):
         opt.zero_grad()
         crit(cnn(x), y).backward()
         opt.step()
-    sch.step()
 
     cnn.eval()
     correct_tr, correct_te = 0, 0

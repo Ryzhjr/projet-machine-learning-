@@ -18,8 +18,8 @@ transform = transforms.Compose([
                          (0.2470, 0.2435, 0.2616))
 ])
 
-train_set = torchvision.datasets.CIFAR10(root='./data', train=True,  download=True, transform=transform)
-test_set  = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+train_set = torchvision.datasets.CIFAR10(root='./data', train=True,  download=False, transform=transform)
+test_set  = torchvision.datasets.CIFAR10(root='./data', train=False, download=False, transform=transform)
 
 CLASSES = ['avion','automobile','oiseau','chat','cerf','chien','grenouille','cheval','bateau','camion']
 
@@ -111,7 +111,7 @@ X_te_gray = (X_te_gray - X_te_gray.mean()) / X_te_gray.std()
 # 4. VERSION COULEUR (3072)
 # =========================
 
-# Aplatit directement les images couleur en vecteur 3072 (32*32*3)
+# Aplatit les images couleur en vecteur 3072 (32*32*3), normalisé ensuite globalement
 def to_flat(dataset):
     X, y = [], []
     for img, label in dataset:
@@ -122,6 +122,9 @@ def to_flat(dataset):
 print("Aplatissement couleur...")
 X_tr_col, _ = to_flat(train_set)
 X_te_col, _ = to_flat(test_set)
+
+X_tr_col = (X_tr_col - X_tr_col.mean()) / X_tr_col.std()
+X_te_col = (X_te_col - X_te_col.mean()) / X_te_col.std()
 
 # =========================
 # 5. MODÈLES LINÉAIRE ET MLP
@@ -151,11 +154,12 @@ class MLP(nn.Module):
 # 6. BOUCLE D'ENTRAÎNEMENT
 # =========================
 
-# Entraîne un modèle et retourne les taux d'erreur train/test
-def entrainer(model, X_tr, y_tr, X_te, y_te, epochs=30, lr=1e-3, bs=256):
+# Entraîne un modèle par descente de gradient en mini-lots (SGD) et
+# retourne les taux d'erreur train/test au fil des époques.
+def entrainer(model, X_tr, y_tr, X_te, y_te, epochs=30, lr=0.1, bs=256):
     model.to(device)
     loader = DataLoader(TensorDataset(X_tr, y_tr), batch_size=bs, shuffle=True)
-    opt  = optim.Adam(model.parameters(), lr=lr)
+    opt  = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
     crit = nn.CrossEntropyLoss()
 
     err_tr_hist, err_te_hist = [], []
