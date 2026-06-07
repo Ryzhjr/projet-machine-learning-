@@ -16,27 +16,67 @@ print(f"Dispositif : {device}")
 IMG_SIZE = 128
 
 # =========================
-# 0. EMPLACEMENT DES DONNÉES
+# 0. EMPLACEMENT ET TÉLÉCHARGEMENT DES DONNÉES
 # =========================
 
 # Dataset Kaggle "awsaf49/cbis-ddsm-breast-cancer-image-dataset" (images déjà en JPEG).
-# Après décompression, on attend la structure suivante :
+# Téléchargement automatique via l'API Kaggle si les fichiers sont absents
+# (comme torchvision télécharge CIFAR-10).
+# Prérequis : pip install kaggle  +  kaggle.json dans le dossier .kaggle de
+#             l'utilisateur (Windows : %USERPROFILE%\.kaggle\ ; Linux/Mac : ~/.kaggle/)
+#
+# Structure attendue après décompression :
 #   data/csv/mass_case_description_train_set.csv
 #   data/csv/mass_case_description_test_set.csv
 #   data/jpeg/<UID_serie>/1-xxx.jpg
-# Il suffit de faire pointer DATA_DIR vers le dossier décompressé.
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR  = r"C:\Users\anton\OneDrive\Desktop\Cours\Cours\I1\S6\ML\projet-machine-learning-\archive"
+DATA_DIR  = os.path.join(BASE_DIR, "data")
 CSV_TRAIN = os.path.join(DATA_DIR, "csv", "mass_case_description_train_set.csv")
 CSV_TEST  = os.path.join(DATA_DIR, "csv", "mass_case_description_test_set.csv")
 DATA_ROOT = os.path.join(DATA_DIR, "jpeg")
 
-for f in [CSV_TRAIN, CSV_TEST, DATA_ROOT]:
-    if not os.path.exists(f):
-        raise FileNotFoundError(
-            f"\nFichier introuvable (le dataset) : {f}\n"
+def telecharger_cbis_ddsm(data_dir):
+    try:
+        import kaggle
+    except ImportError:
+        raise ImportError("Package kaggle absent. Exécutez : pip install kaggle")
+    print("Téléchargement de CBIS-DDSM depuis Kaggle (~6 Go)...")
+    os.makedirs(data_dir, exist_ok=True)
+    kaggle.api.authenticate()
+    kaggle.api.dataset_download_files(
+        "awsaf49/cbis-ddsm-breast-cancer-image-dataset",
+        path=data_dir, unzip=True, quiet=False,
+    )
+    print("Téléchargement terminé.")
 
-        )
+# Télécharge si le CSV d'entraînement est absent (équivalent de download=True)
+if not os.path.exists(CSV_TRAIN):
+    telecharger_cbis_ddsm(DATA_DIR)
+
+# Le dataset Kaggle peut placer les fichiers dans un sous-dossier : on recherche
+# les CSV et le dossier jpeg si les chemins par défaut ne correspondent pas.
+def localiser(nom_fichier, racine):
+    for r, _, fichiers in os.walk(racine):
+        if nom_fichier in fichiers:
+            return os.path.join(r, nom_fichier)
+    return None
+
+if not os.path.exists(CSV_TRAIN):
+    trouve = localiser("mass_case_description_train_set.csv", DATA_DIR)
+    if trouve:
+        CSV_TRAIN = trouve
+        CSV_TEST  = localiser("mass_case_description_test_set.csv", DATA_DIR)
+        cand = os.path.join(os.path.dirname(os.path.dirname(CSV_TRAIN)), "jpeg")
+        if os.path.isdir(cand):
+            DATA_ROOT = cand
+
+for f in [CSV_TRAIN, CSV_TEST, DATA_ROOT]:
+    if not f or not os.path.exists(f):
+        raise FileNotFoundError(f"\nFichier introuvable (le dataset) : {f}\n")
+
+print(f"CSV train : {CSV_TRAIN}")
+print(f"CSV test  : {CSV_TEST}")
+print(f"Dossier images : {DATA_ROOT}")
 
 # =========================
 # 1. CHARGEMENT DU CSV ET DES ÉTIQUETTES
