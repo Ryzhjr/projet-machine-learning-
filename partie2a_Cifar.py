@@ -18,8 +18,9 @@ transform = transforms.Compose([
                          (0.2470, 0.2435, 0.2616))
 ])
 
-train_set = torchvision.datasets.CIFAR10(root='./data', train=True,  download=False, transform=transform)
-test_set  = torchvision.datasets.CIFAR10(root='./data', train=False, download=False, transform=transform)
+train_set = torchvision.datasets.CIFAR10(root='./data', train=True,  download=True, transform=transform)
+test_set  = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+
 
 CLASSES = ['avion','automobile','oiseau','chat','cerf','chien','grenouille','cheval','bateau','camion']
 
